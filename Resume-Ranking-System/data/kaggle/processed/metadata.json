@@ -1,0 +1,11 @@
+{
+  "num_samples": 2483,
+  "num_categories": 24,
+  "embedding_dim": 384,
+  "score_distribution": {
+    "min": 0.0,
+    "max": 0.7668944597244263,
+    "mean": 0.3569800917455267,
+    "median": 0.3665771186351776
+  }
+}
