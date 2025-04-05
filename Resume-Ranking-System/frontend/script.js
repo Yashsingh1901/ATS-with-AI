@@ -7,6 +7,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const scoreValue = document.getElementById('score-value');
     const resumeText = document.getElementById('resume-text');
     const jobDescription = document.getElementById('job-description');
+    const useDefaultJd = document.getElementById('use-default-jd');
+    const defaultJdNotice = document.getElementById('default-jd-notice');
+
+    // Analysis elements
+    const keywordMatches = document.getElementById('keyword-matches');
+    const missingKeywords = document.getElementById('missing-keywords');
+    const educationSection = document.getElementById('education-section');
+    const experienceSection = document.getElementById('experience-section');
+    const skillsSection = document.getElementById('skills-section');
 
     // Update file name display when a file is selected
     resumeInput.addEventListener('change', (e) => {
@@ -21,6 +30,42 @@ document.addEventListener('DOMContentLoaded', () => {
     fileButton.addEventListener('click', () => {
         resumeInput.click();
     });
+
+    // Display resume section content
+    function displaySectionContent(sectionElement, sectionData) {
+        sectionElement.innerHTML = '';
+
+        if (sectionData && sectionData.length > 0) {
+            sectionData.forEach(item => {
+                const paragraph = document.createElement('p');
+                paragraph.textContent = item;
+                sectionElement.appendChild(paragraph);
+            });
+        } else {
+            const paragraph = document.createElement('p');
+            paragraph.textContent = 'No information found';
+            sectionElement.appendChild(paragraph);
+        }
+    }
+
+    // Display keyword matches
+    function displayKeywords(container, keywords, isMatch) {
+        container.innerHTML = '';
+
+        if (keywords && keywords.length > 0) {
+            keywords.forEach(keyword => {
+                const keywordElement = document.createElement('span');
+                keywordElement.textContent = keyword;
+                keywordElement.className = `keyword ${isMatch ? 'match' : 'missing'}`;
+                container.appendChild(keywordElement);
+            });
+        } else {
+            const message = document.createElement('p');
+            message.textContent = isMatch ? 'No matching keywords' : 'No missing keywords';
+            message.style.color = '#888';
+            container.appendChild(message);
+        }
+    }
 
     // Handle form submission
     resumeForm.addEventListener('submit', async (e) => {
@@ -37,6 +82,14 @@ document.addEventListener('DOMContentLoaded', () => {
         submitButton.classList.add('loading');
         scoreValue.textContent = 'Calculating...';
         resumeText.textContent = 'Processing resume...';
+        defaultJdNotice.classList.add('hidden');
+
+        // Clear previous analysis
+        keywordMatches.innerHTML = '';
+        missingKeywords.innerHTML = '';
+        educationSection.innerHTML = '';
+        experienceSection.innerHTML = '';
+        skillsSection.innerHTML = '';
 
         // Create form data
         const formData = new FormData();
@@ -46,6 +99,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (jobDescription.value.trim()) {
             formData.append('job_description', jobDescription.value.trim());
         }
+
+        // Add use_default_jd flag
+        formData.append('use_default_job_desc', useDefaultJd.checked);
 
         try {
             // API endpoint
@@ -75,10 +131,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Update score (convert to percentage)
             const scorePercentage = Math.round(data.score * 100);
+
+            // Set color based on score
+            const scoreCircle = document.querySelector('.score-circle');
+            if (scorePercentage >= 70) {
+                scoreCircle.style.borderColor = '#4CAF50'; // Green for high score
+            } else if (scorePercentage >= 40) {
+                scoreCircle.style.borderColor = '#FFC107'; // Yellow/amber for medium score
+            } else {
+                scoreCircle.style.borderColor = '#F44336'; // Red for low score
+            }
+
             scoreValue.textContent = `${scorePercentage}%`;
+
+            // Show default JD notice if applicable
+            if (data.used_default_jd) {
+                defaultJdNotice.classList.remove('hidden');
+                defaultJdNotice.textContent = 'Using default job description';
+            } else if (!jobDescription.value.trim() && !useDefaultJd.checked) {
+                defaultJdNotice.classList.remove('hidden');
+                defaultJdNotice.textContent = 'No job description provided - score is 0%';
+            } else {
+                defaultJdNotice.classList.add('hidden');
+            }
 
             // Update resume text preview
             resumeText.textContent = data.resume_text;
+
+            // Display keyword matches
+            if (data.match_details && data.match_details.keywords) {
+                const matchedKeywords = Object.keys(data.match_details.keywords)
+                    .filter(keyword => data.match_details.keywords[keyword]);
+                displayKeywords(keywordMatches, matchedKeywords, true);
+            }
+
+            // Display missing keywords
+            if (data.match_details && data.match_details.missing_keywords) {
+                displayKeywords(missingKeywords, data.match_details.missing_keywords, false);
+            }
+
+            // Display resume sections
+            if (data.match_details && data.match_details.sections) {
+                displaySectionContent(educationSection, data.match_details.sections.education);
+                displaySectionContent(experienceSection, data.match_details.sections.experience);
+                displaySectionContent(skillsSection, data.match_details.sections.skills);
+            }
 
             // Scroll to results if on mobile
             if (window.innerWidth <= 768) {

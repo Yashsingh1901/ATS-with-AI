@@ -51,6 +51,20 @@
               ></textarea>
             </div>
 
+            <div class="form-group">
+              <div class="checkbox-container">
+                <input
+                  type="checkbox"
+                  id="use-default-jd"
+                  name="use-default-jd"
+                  checked
+                />
+                <label for="use-default-jd"
+                  >Use default job description if none provided</label
+                >
+              </div>
+            </div>
+
             <button type="submit" id="submit-button">
               <span class="button-text">Calculate Score</span>
               <span class="spinner" id="spinner"></span>
@@ -67,7 +81,43 @@
               <span id="score-value">-</span>
             </div>
             <p class="score-label">Match Score</p>
+            <p id="default-jd-notice" class="default-notice hidden">
+              Using default job description
+            </p>
           </div>
+
+          <div class="detailed-analysis">
+            <h3>Detailed Analysis</h3>
+
+            <div class="analysis-section">
+              <h4>Keyword Matches</h4>
+              <div id="keyword-matches" class="keyword-container"></div>
+            </div>
+
+            <div class="analysis-section">
+              <h4>Missing Keywords</h4>
+              <div id="missing-keywords" class="keyword-container"></div>
+            </div>
+
+            <div class="analysis-section">
+              <h4>Resume Sections</h4>
+              <div class="sections-container">
+                <div class="section-box">
+                  <h5>Education</h5>
+                  <div id="education-section" class="section-content"></div>
+                </div>
+                <div class="section-box">
+                  <h5>Experience</h5>
+                  <div id="experience-section" class="section-content"></div>
+                </div>
+                <div class="section-box">
+                  <h5>Skills</h5>
+                  <div id="skills-section" class="section-content"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="resume-preview">
             <h3>Resume Preview</h3>
             <div id="resume-text" class="resume-text"></div>
