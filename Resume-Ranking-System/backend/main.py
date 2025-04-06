@@ -60,26 +60,93 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         return "Error extracting text from PDF."
 
 def extract_resume_sections(resume_text: str) -> dict:
-    """Extract different sections from a resume."""
-    sections = {}
+    """Extract different sections from a resume with detailed information."""
+    sections = {
+        'education': [],
+        'experience': [],
+        'skills': []
+    }
     
-    # Simple pattern-based section extraction - you can make this more sophisticated
-    education_pattern = r'(education|academic|degree|university|college|school)'
-    experience_pattern = r'(experience|work|employment|job|career|professional)'
-    skills_pattern = r'(skills|expertise|proficiency|competenc(y|ies)|technical|technologies)'
+    # Split text into lines for better processing
+    lines = resume_text.split('\n')
+    current_section = None
+    section_text = []
     
-    # Find sections - making the entire pattern case-insensitive with (?i) at the start
-    sections['education'] = re.findall(r'(?i)' + education_pattern + r'[^.]*(?:\.\s*[^.]*){0,3}\.', resume_text)
-    sections['experience'] = re.findall(r'(?i)' + experience_pattern + r'[^.]*(?:\.\s*[^.]*){0,3}\.', resume_text)
-    sections['skills'] = re.findall(r'(?i)' + skills_pattern + r'[^.]*(?:\.\s*[^.]*){0,3}\.', resume_text)
+    # Regular expressions for section headers
+    education_header = re.compile(r'(?i)^\s*(education|academic|qualification)', re.IGNORECASE)
+    experience_header = re.compile(r'(?i)^\s*(experience|work|employment)', re.IGNORECASE)
+    skills_header = re.compile(r'(?i)^\s*(skills|expertise|technologies|technical)', re.IGNORECASE)
     
-    # Extract sections if not found by the patterns above (backup)
-    if not sections['education'] and 'education' in resume_text.lower():
-        sections['education'] = ['Education section detected but not fully extracted']
-    if not sections['experience'] and 'experience' in resume_text.lower():
-        sections['experience'] = ['Experience section detected but not fully extracted']
-    if not sections['skills'] and 'skills' in resume_text.lower():
-        sections['skills'] = ['Skills section detected but not fully extracted']
+    # Regular expressions for content
+    education_content = re.compile(r'(?i)(university|college|school|institute|academy|degree|bachelor|master|phd|b\.?tech|m\.?tech|b\.?e\.?|m\.?e\.?)')
+    skills_content = re.compile(r'(?i)(python|java|c\+\+|javascript|html|css|sql|database|machine learning|ai|data science|web|cloud|aws|azure|gcp|docker|kubernetes|git|linux|windows|macos|android|ios)')
+    date_pattern = re.compile(r'(?i)(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|20\d{2})')
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+            
+        # Check for section headers
+        if education_header.search(line):
+            if current_section and section_text:
+                sections[current_section].extend(section_text)
+            current_section = 'education'
+            section_text = []
+        elif experience_header.search(line):
+            if current_section and section_text:
+                sections[current_section].extend(section_text)
+            current_section = 'experience'
+            section_text = []
+        elif skills_header.search(line):
+            if current_section and section_text:
+                sections[current_section].extend(section_text)
+            current_section = 'skills'
+            section_text = []
+        elif current_section:
+            # Process content based on current section
+            if current_section == 'education' and education_content.search(line):
+                section_text.append(line)
+            elif current_section == 'experience' and (date_pattern.search(line) or len(line) > 30):
+                section_text.append(line)
+            elif current_section == 'skills':
+                # Split skills by common separators and filter
+                skills = [s.strip() for s in re.split(r'[,;|]', line)]
+                skills = [s for s in skills if s and len(s) > 2 and not s.lower().startswith(('skill', 'technology'))]
+                if skills:
+                    section_text.extend(skills)
+    
+    # Add any remaining section text
+    if current_section and section_text:
+        sections[current_section].extend(section_text)
+    
+    # Fallback: If sections are empty, try to find content using patterns
+    if not any(sections.values()):
+        # Look for education entries
+        education_matches = re.findall(r'(?i)(?:(?:bachelor|master|phd|b\.?tech|m\.?tech|b\.?e\.?|m\.?e\.?)[^.]*(?:university|college|institute)[^.]*\.)', resume_text)
+        if education_matches:
+            sections['education'] = education_matches
+            
+        # Look for experience entries
+        experience_matches = re.findall(r'(?i)(?:(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|20\d{2})[^.]*(?:present|current|worked|developed|managed)[^.]*\.)', resume_text)
+        if experience_matches:
+            sections['experience'] = experience_matches
+            
+        # Look for skills
+        skills_text = re.findall(r'(?i)(?:skills|technologies)[^.]*\.', resume_text)
+        if skills_text:
+            skills = []
+            for text in skills_text:
+                skills.extend([s.strip() for s in re.split(r'[,;|]', text) if s.strip() and len(s.strip()) > 2])
+            sections['skills'] = skills
+    
+    # Clean up the sections
+    for section in sections:
+        # Remove duplicates while preserving order
+        seen = set()
+        sections[section] = [x for x in sections[section] if not (x.lower() in seen or seen.add(x.lower()))]
+        # Remove very short entries and common headers
+        sections[section] = [x for x in sections[section] if len(x) > 5 and not re.match(r'(?i)^\s*(education|experience|skills|expertise|technologies)\s*$', x)]
     
     return sections
 
