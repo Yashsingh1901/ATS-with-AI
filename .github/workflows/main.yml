@@ -1,5 +1,6 @@
 name: ATS with AI CI/CD
 
+# Trigger workflow on push to main branch and pull requests
 on:
   push:
     branches: [main]
@@ -9,29 +10,59 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10"]
+      fail-fast: false
+
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
 
-      - name: Install dependencies
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Check directory structure
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Directory contents:"
+          ls -la
+          echo "ATS-with-AI contents:"
+          ls -la ATS-with-AI/src/mcp/
 
       - name: Run MCP tests
         run: |
-          python ATS-with-AI/src/mcp/test_mcp.py
+          cd ATS-with-AI/src/mcp
+          python -m pytest test_mcp.py -v
         env:
-          GITHUB_PERSONAL_ACCESS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PYTHONPATH: ${{ github.workspace }}
+
+      - name: Run Resume Ranking System tests
+        run: |
+          cd Resume-Ranking-System
+          python -m pytest tests/ -v
+        continue-on-error: true
 
   deploy:
     needs: test
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
     steps:
       - uses: actions/checkout@v3
 
@@ -39,13 +70,29 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest
+
+      - name: Build deployment package
+        run: |
+          echo "Building deployment package..."
+          # Create deployment directory
+          mkdir -p deployment
+          # Copy necessary files
+          cp -r Resume-Ranking-System/* deployment/
+          cp requirements.txt deployment/
 
       - name: Deploy to production
         run: |
           echo "Deploying to production..."
-          # Add your deployment commands here
+          # Add actual deployment commands here
+          # For example:
+          # - aws s3 sync deployment/ s3://your-bucket/
+          # - aws lambda update-function-code ...
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
