@@ -12,6 +12,7 @@ import sys
 import traceback
 import re
 from sklearn.feature_extraction.text import CountVectorizer
+from scipy.spatial.distance import cosine
 
 app = FastAPI(title="AI Resume Ranking System")
 
@@ -150,40 +151,265 @@ def extract_resume_sections(resume_text: str) -> dict:
     
     return sections
 
+def calculate_section_scores(sections: dict, job_description: str) -> dict:
+    """Calculate weighted scores for each section with enhanced industry-specific scoring."""
+    section_weights = {
+        'experience': 0.5,
+        'skills': 0.3,
+        'education': 0.2
+    }
+    
+    # Industry-specific keywords and their weights
+    industry_keywords = {
+        'software_development': {
+            'keywords': ['software', 'development', 'programming', 'coding', 'application', 'web', 'mobile', 'frontend', 'backend', 'fullstack'],
+            'weight': 0.3
+        },
+        'data_science': {
+            'keywords': ['data', 'analytics', 'machine learning', 'ai', 'statistics', 'python', 'r', 'sql', 'big data', 'visualization'],
+            'weight': 0.3
+        },
+        'cloud_computing': {
+            'keywords': ['cloud', 'aws', 'azure', 'gcp', 'devops', 'kubernetes', 'docker', 'ci/cd', 'infrastructure', 'microservices'],
+            'weight': 0.2
+        },
+        'project_management': {
+            'keywords': ['project', 'management', 'agile', 'scrum', 'kanban', 'leadership', 'team', 'planning', 'budget', 'stakeholder'],
+            'weight': 0.2
+        }
+    }
+    
+    section_scores = {}
+    for section, content in sections.items():
+        if not content:
+            section_scores[section] = 0.0
+            continue
+            
+        # Get section embedding
+        section_text = " ".join(content)
+        section_embedding = get_resume_embedding(section_text)
+        jd_embedding = get_jd_embedding(job_description)
+        
+        # Calculate semantic similarity
+        similarity = 1 - cosine(section_embedding, jd_embedding)
+        
+        # Apply section-specific scoring
+        if section == 'experience':
+            # Check for years of experience with more granular scoring
+            years_pattern = r'(\d+)\s*(?:years?|yrs?)'
+            years_matches = re.findall(years_pattern, section_text.lower())
+            total_years = sum(map(int, years_matches))
+            
+            # More granular years scoring
+            if total_years >= 10:
+                years_score = 1.0
+            elif total_years >= 7:
+                years_score = 0.9
+            elif total_years >= 5:
+                years_score = 0.8
+            elif total_years >= 3:
+                years_score = 0.7
+            elif total_years >= 2:
+                years_score = 0.6
+            elif total_years >= 1:
+                years_score = 0.5
+            else:
+                years_score = 0.3
+            
+            # Enhanced leadership role detection
+            leadership_roles = {
+                'senior': ['senior', 'lead', 'principal', 'architect'],
+                'management': ['manager', 'head', 'director', 'supervisor', 'team lead'],
+                'executive': ['cto', 'ceo', 'vp', 'chief', 'founder']
+            }
+            
+            leadership_score = 0
+            for role_type, keywords in leadership_roles.items():
+                if any(keyword in section_text.lower() for keyword in keywords):
+                    if role_type == 'senior':
+                        leadership_score = max(leadership_score, 0.3)
+                    elif role_type == 'management':
+                        leadership_score = max(leadership_score, 0.6)
+                    elif role_type == 'executive':
+                        leadership_score = max(leadership_score, 0.9)
+            
+            # Industry-specific experience scoring
+            industry_score = 0
+            for industry, details in industry_keywords.items():
+                keyword_matches = sum(1 for keyword in details['keywords'] if keyword in section_text.lower())
+                if keyword_matches > 0:
+                    industry_score += (keyword_matches / len(details['keywords'])) * details['weight']
+            
+            section_scores[section] = (
+                similarity * 0.4 +
+                years_score * 0.2 +
+                leadership_score * 0.2 +
+                industry_score * 0.2
+            ) * section_weights[section]
+            
+        elif section == 'skills':
+            # Enhanced skill level detection
+            skill_levels = {
+                'expert': ['expert', 'master', 'advanced', 'proficient', 'extensive'],
+                'intermediate': ['intermediate', 'experienced', 'skilled', 'competent'],
+                'beginner': ['beginner', 'basic', 'familiar', 'knowledge']
+            }
+            
+            # Industry-specific skills
+            industry_skills = {
+                'programming': ['python', 'java', 'javascript', 'c++', 'c#', 'ruby', 'go', 'rust'],
+                'web': ['html', 'css', 'react', 'angular', 'vue', 'node.js', 'express'],
+                'database': ['sql', 'mysql', 'postgresql', 'mongodb', 'redis', 'oracle'],
+                'cloud': ['aws', 'azure', 'gcp', 'docker', 'kubernetes', 'terraform'],
+                'ai_ml': ['tensorflow', 'pytorch', 'scikit-learn', 'numpy', 'pandas']
+            }
+            
+            skills_score = 0
+            total_skills = 0
+            
+            for skill in content:
+                # Check skill level
+                level_score = 0.5  # Default level
+                for level, indicators in skill_levels.items():
+                    if any(indicator in skill.lower() for indicator in indicators):
+                        if level == 'expert':
+                            level_score = 1.0
+                        elif level == 'intermediate':
+                            level_score = 0.7
+                        elif level == 'beginner':
+                            level_score = 0.4
+                
+                # Check industry relevance
+                industry_relevance = 0
+                for category, skills in industry_skills.items():
+                    if any(s in skill.lower() for s in skills):
+                        industry_relevance = 1.0
+                        break
+                
+                # Combine scores
+                skill_score = (level_score * 0.7 + industry_relevance * 0.3)
+                skills_score += skill_score
+                total_skills += 1
+            
+            skills_score = skills_score / total_skills if total_skills > 0 else 0
+            section_scores[section] = (similarity * 0.6 + skills_score * 0.4) * section_weights[section]
+            
+        else:  # education
+            # Enhanced degree relevance
+            degree_relevance = {
+                'computer_science': ['computer science', 'cs', 'software engineering', 'se'],
+                'data_science': ['data science', 'machine learning', 'ai', 'statistics'],
+                'information_technology': ['it', 'information technology', 'information systems'],
+                'engineering': ['computer engineering', 'electrical engineering', 'mechanical engineering']
+            }
+            
+            degree_score = 0
+            for field, keywords in degree_relevance.items():
+                if any(keyword in section_text.lower() for keyword in keywords):
+                    degree_score = 1.0
+                    break
+            
+            # Enhanced GPA scoring
+            gpa_pattern = r'GPA:\s*(\d+\.\d+)'
+            gpa_match = re.search(gpa_pattern, section_text)
+            if gpa_match:
+                gpa = float(gpa_match.group(1))
+                if gpa >= 3.8:
+                    gpa_score = 1.0
+                elif gpa >= 3.5:
+                    gpa_score = 0.9
+                elif gpa >= 3.2:
+                    gpa_score = 0.8
+                elif gpa >= 3.0:
+                    gpa_score = 0.7
+                else:
+                    gpa_score = 0.5
+            else:
+                gpa_score = 0.5
+            
+            # Check for relevant certifications
+            cert_keywords = ['certified', 'certification', 'professional', 'expert', 'specialist']
+            cert_score = 0.3 if any(keyword in section_text.lower() for keyword in cert_keywords) else 0
+            
+            section_scores[section] = (
+                similarity * 0.4 +
+                degree_score * 0.3 +
+                gpa_score * 0.2 +
+                cert_score * 0.1
+            ) * section_weights[section]
+    
+    return section_scores
+
 def extract_keywords(job_description: str) -> List[str]:
-    """Extract keywords from job description."""
-    # Create and configure a CountVectorizer to extract key terms
+    """Extract keywords from job description with improved accuracy."""
+    # Create and configure a CountVectorizer with better parameters for single document
     vectorizer = CountVectorizer(
         stop_words='english',
-        min_df=1,
-        max_df=1.0,
-        ngram_range=(1, 2)
+        min_df=1,  # Minimum document frequency
+        max_df=1.0,  # Maximum document frequency
+        ngram_range=(1, 3),  # Include up to 3-word phrases
+        max_features=50  # Limit to top 50 keywords
     )
     
-    # Fit and transform the job description
-    X = vectorizer.fit_transform([job_description])
-    
-    # Get feature names and their frequencies
-    feature_names = vectorizer.get_feature_names_out()
-    frequencies = X.toarray()[0]
-    
-    # Sort keywords by frequency and return top 10
-    sorted_indices = frequencies.argsort()[::-1]
-    top_keywords = [feature_names[idx] for idx in sorted_indices[:15]]
-    
-    return top_keywords
+    try:
+        # Fit and transform the job description
+        X = vectorizer.fit_transform([job_description])
+        
+        # Get feature names and their frequencies
+        feature_names = vectorizer.get_feature_names_out()
+        frequencies = X.toarray()[0]
+        
+        # Calculate TF-IDF scores
+        from sklearn.feature_extraction.text import TfidfTransformer
+        tfidf = TfidfTransformer()
+        tfidf_scores = tfidf.fit_transform(X).toarray()[0]
+        
+        # Combine frequency and TF-IDF scores
+        combined_scores = frequencies * tfidf_scores
+        
+        # Sort keywords by combined score
+        sorted_indices = combined_scores.argsort()[::-1]
+        top_keywords = [feature_names[idx] for idx in sorted_indices[:20]]
+        
+        return top_keywords
+    except Exception as e:
+        print(f"Error in keyword extraction: {e}")
+        # Fallback to simple keyword extraction
+        words = job_description.lower().split()
+        # Remove common words and short terms
+        stop_words = set(['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'with', 'by', 'about', 'as', 'of'])
+        keywords = [word for word in words if len(word) > 3 and word not in stop_words]
+        # Return top 20 unique keywords
+        return list(set(keywords))[:20]
 
 def check_keyword_presence(resume_text: str, keywords: List[str]) -> dict:
-    """Check which keywords from the job description are present in the resume."""
+    """Check which keywords from the job description are present in the resume with context."""
     resume_lower = resume_text.lower()
     keyword_matches = {}
     
     for keyword in keywords:
-        # Check if keyword is present in resume
+        # Check for exact matches
         if keyword.lower() in resume_lower:
-            keyword_matches[keyword] = True
+            # Look for context around the keyword
+            context_start = max(0, resume_lower.find(keyword.lower()) - 50)
+            context_end = min(len(resume_lower), resume_lower.find(keyword.lower()) + len(keyword) + 50)
+            context = resume_lower[context_start:context_end]
+            
+            # Check for experience indicators
+            experience_indicators = ['years', 'experience', 'worked', 'developed', 'implemented']
+            has_experience = any(indicator in context for indicator in experience_indicators)
+            
+            keyword_matches[keyword] = {
+                'present': True,
+                'has_experience': has_experience,
+                'context': context.strip()
+            }
         else:
-            keyword_matches[keyword] = False
+            keyword_matches[keyword] = {
+                'present': False,
+                'has_experience': False,
+                'context': None
+            }
     
     return keyword_matches
 
@@ -197,7 +423,6 @@ def get_jd_embedding(jd_text: str) -> np.ndarray:
 
 def fallback_score(resume_embedding, jd_embedding):
     """Fallback scoring using cosine similarity."""
-    from scipy.spatial.distance import cosine
     return 1 - cosine(resume_embedding, jd_embedding)
 
 def rescale_score(score: float, min_score: float = 0.25, max_score: float = 0.45) -> float:
@@ -224,7 +449,7 @@ async def rank_resume(
     job_description: Optional[str] = Form(None),
     use_default_job_desc: Optional[bool] = Form(True)
 ):
-    """Rank a resume against a job description."""
+    """Rank a resume against a job description with enhanced scoring."""
     try:
         print(f"Request received: file={resume.filename}, job_desc length={len(job_description) if job_description else 0}")
         
@@ -261,58 +486,68 @@ async def rank_resume(
         print(f"Text extracted, length: {len(resume_text)} characters")
         
         # Extract resume sections
-        resume_sections = extract_resume_sections(resume_text)
+        sections = extract_resume_sections(resume_text)
         
-        # Extract keywords from job description
-        jd_keywords = extract_keywords(job_description)
-        keyword_presence = check_keyword_presence(resume_text, jd_keywords)
-        missing_keywords = [k for k, v in keyword_presence.items() if not v]
+        # Calculate section scores
+        section_scores = calculate_section_scores(sections, job_description)
         
-        # Get embeddings
-        print("Generating embeddings...")
-        resume_embedding = get_resume_embedding(resume_text)
-        jd_embedding = get_jd_embedding(job_description)
+        # Extract and check keywords
+        keywords = extract_keywords(job_description)
+        keyword_matches = check_keyword_presence(resume_text, keywords)
         
-        # Combine features
-        features = np.concatenate([resume_embedding, jd_embedding])
-        print("Features shape:", features.shape)
-        
-        # Get prediction
-        print("Making prediction...")
+        # Calculate final score
         if ranker is not None:
-            raw_score = float(ranker.predict([features])[0])
-            print(f"ML model prediction (raw): {raw_score}")
+            # Get embeddings
+            resume_embedding = get_resume_embedding(resume_text)
+            jd_embedding = get_jd_embedding(job_description)
+            
+            # Get base score from model
+            base_score = ranker.predict([resume_embedding])[0]
         else:
-            # Fallback to cosine similarity if model not loaded
-            raw_score = float(fallback_score(resume_embedding, jd_embedding))
-            print(f"Fallback score (raw): {raw_score}")
+            # Fallback to cosine similarity
+            base_score = fallback_score(
+                get_resume_embedding(resume_text),
+                get_jd_embedding(job_description)
+            )
+        
+        # Calculate keyword match score
+        keyword_score = sum(1 for match in keyword_matches.values() if match['present']) / len(keywords)
+        
+        # Calculate section match score
+        section_score = sum(section_scores.values())
+        
+        # Combine scores with weights
+        final_score = (
+            base_score * 0.4 +  # Base semantic similarity
+            keyword_score * 0.3 +  # Keyword matching
+            section_score * 0.3  # Section-specific scoring
+        )
+        
+        # Rescale score to 0-1 range
+        final_score = rescale_score(final_score)
         
         # Clean up
         if os.path.exists(temp_path):
             os.remove(temp_path)
             print(f"Temporary file {temp_path} removed")
         
-        # Rescale the score to use the full range - adjust min_score and max_score 
-        # based on observed range in your logs (approx 0.29 to 0.40)
-        score = rescale_score(raw_score, 0.29, 0.40)
-        print(f"Rescaled score: {score} (from raw score: {raw_score})")
-        
         result = {
-            "score": score,
+            "score": final_score,
             "resume_text": resume_text[:500] + "..." if len(resume_text) > 500 else resume_text,
             "used_default_jd": used_default_jd,
             "match_details": {
-                "sections": resume_sections,
-                "keywords": keyword_presence,
-                "missing_keywords": missing_keywords
+                "sections": sections,
+                "section_scores": section_scores,
+                "keywords": keyword_matches,
+                "missing_keywords": [k for k, v in keyword_matches.items() if not v['present']]
             }
         }
         print("Returning result")
         return result
     
     except Exception as e:
-        print(f"Error in rank_resume: {str(e)}")
-        print(traceback.format_exc())
+        print(f"Error processing resume: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 async def save_temp_file(uploaded_file: UploadFile) -> str:
