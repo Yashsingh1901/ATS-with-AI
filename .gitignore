@@ -169,3 +169,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+mcp_server/
+temp_backup/
+lambda_layer/
+deployment_package/
+scripts/lambda_layer.zip
+scripts/lambda_function.zip
